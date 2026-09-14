@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Zoom Phone — monday Item View</title>
+
+<!-- monday SDK: lets this page talk to the board item it's embedded in -->
+<script src="https://cdn.monday.com/sdk/monday-sdk-js.min.js"></script>
+
+<style>
+  :root {
+    --border: #e6e9ef;
+    --text: #323338;
+    --text-dim: #676879;
+    --brand: #0073ea;
+    --brand-dark: #0060b9;
+    --bg: #ffffff;
+    --panel: #f6f7fb;
+    --radius: 8px;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    color: var(--text);
+    background: var(--bg);
+  }
+  .app {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    padding: 16px;
+    max-width: 720px;
+  }
+
+  /* ---- Student / contact info panel ---- */
+  .info-panel {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 14px 16px;
+  }
+  .info-row {
+    display: flex;
+    justify-content: space-between;
+    font-size: 13px;
+    padding: 4px 0;
+  }
+  .info-row .label { color: var(--text-dim); }
+  .info-row .value { font-weight: 500; }
+
+  .actions {
+    display: flex;
+    gap: 8px;
+    margin-top: 10px;
+  }
+  button.action {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 14px;
+    border-radius: var(--radius);
+    border: none;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    background: var(--brand);
+    color: white;
+  }
+  button.action:hover { background: var(--brand-dark); }
+  button.action.secondary {
+    background: white;
+    color: var(--brand);
+    border: 1px solid var(--brand);
+  }
+  button.action:disabled {
+    background: #c5c7d0;
+    color: white;
+    cursor: not-allowed;
+    border: none;
+  }
+
+  /* ---- Zoom embed panel ---- */
+  .zoom-panel {
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    overflow: hidden;
+  }
+  .zoom-panel iframe {
+    width: 100%;
+    height: 520px;
+    border: none;
+    display: block;
+  }
+
+  .status-bar {
+    font-size: 12px;
+    color: var(--text-dim);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 2px 2px;
+  }
+  .dot {
+    width: 7px; height: 7px; border-radius: 50%;
+    background: #cccccc;
+  }
+  .dot.ok { background: #00c875; }
+  .dot.err { background: #e2445c; }
+
+  .banner {
+    font-size: 12px;
+    background: #fff4ce;
+    border: 1px solid #f5c563;
+    border-radius: var(--radius);
+    padding: 8px 10px;
+    display: none;
+  }
+  .banner.show { display: block; }
+</style>
+</head>
+<body>
+
+<div class="app">
+
+  <div id="config-banner" class="banner">
+    Missing column IDs in CONFIG — showing placeholder data. Edit the CONFIG block at the top of app.js.
+  </div>
+
+  <div class="info-panel">
+    <div class="info-row"><span class="label">Name</span><span class="value" id="f-name">—</span></div>
+    <div class="info-row"><span class="label">Parent / Guardian</span><span class="value" id="f-parent">—</span></div>
+    <div class="info-row"><span class="label">Phone</span><span class="value" id="f-phone">—</span></div>
+
+    <div class="actions">
+      <button class="action" id="btn-call" disabled>📞 Call</button>
+      <button class="action secondary" id="btn-sms" disabled>💬 Text</button>
+    </div>
+  </div>
+
+  <div class="status-bar">
+    <span class="dot" id="conn-dot"></span>
+    <span id="conn-text">Connecting to Zoom Smart Embed…</span>
+  </div>
+
+  <div class="zoom-panel">
+    <iframe
+      id="zoom-frame"
+      src="ZOOM_SMART_EMBED_SRC_GOES_HERE"
+      allow="microphone; autoplay; clipboard-write"
+      title="Zoom Phone Smart Embed">
+    </iframe>
+  </div>
+
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>
