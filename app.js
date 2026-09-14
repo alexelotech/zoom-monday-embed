@@ -24,7 +24,7 @@ const CONFIG = {
 
 /* ===================================================================== */
 
-const monday = window.mondaySDK ? window.mondaySDK() : (window.monday || null);
+const monday = window.mondaySdk ? window.mondaySdk() : null;
 if (!monday) {
   console.error("monday-sdk-js failed to load. Check the <script> tag in index.html.");
 }
@@ -52,7 +52,6 @@ el.frame.src = CONFIG.zoomEmbedSrc;
 if (monday) {
   monday.listen("context", async (res) => {
     const ctx = res.data;
-    console.log("MONDAY CONTEXT:", ctx);
     currentItemId = ctx.itemId;
     currentBoardId = ctx.boardId;
     if (currentItemId && currentBoardId) {
