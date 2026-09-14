@@ -22,7 +22,7 @@ const CONFIG = {
   // The iframe src for Smart Embed. Get this from your Zoom Marketplace
   // "Zoom Phone Smart Embed" app install/config page after you've added
   // your hosting domain to the approved domain list.
-  zoomEmbedSrc: "ZOOM_SMART_EMBED_SRC_GOES_HERE",
+  zoomEmbedSrc: "https://applications.zoom.us/integration/phone/embeddablephone/home",
 };
 
 /* ===================================================================== */
@@ -52,9 +52,6 @@ const el = {
 // all in one place to edit).
 el.frame.src = CONFIG.zoomEmbedSrc;
 
-if (CONFIG.zoomEmbedSrc === "ZOOM_SMART_EMBED_SRC_GOES_HERE") {
-  setConnStatus("err", "Zoom embed src not configured — edit CONFIG.zoomEmbedSrc in app.js");
-}
 
 /* ---------------------------------------------------------------------
    1. Get the monday item context (which item/board this is embedded on)
