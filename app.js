@@ -1,27 +1,24 @@
 /* =====================================================================
    CONFIG — fill these in for your board before deploying.
-   Find column IDs in monday: open the board -> click a column header ->
-   "..." menu doesn't show the ID directly; easiest way is to run the
-   getColumnIds() helper at the bottom of this file from the browser
-   console once the app is loaded inside monday, or use the monday API
-   playground (https://YOURACCOUNT.monday.com/api-explorer) with:
-     query { boards(ids: BOARD_ID) { columns { id title type } } }
+
+   Phone numbers are now auto-detected: on load, the app asks monday for
+   every column on the board whose type is "phone" and reads all of them
+   for the item, so this works whether a board has one phone column or
+   five. You don't need to name phone columns here.
+
+   Only these two still need manual setup:
    ===================================================================== */
 const CONFIG = {
-  // monday column IDs on the board this Item View is added to
   columns: {
-    name: "name",              // usually the item's own name, no column needed
-    parentName: "text_parent",   // <-- replace with your "Parent/Guardian" text column id
-    phone: "phone_number",       // <-- replace with your "Phone" column id (type: phone)
-    callLogUpdate: null,         // optional: set a text/long-text column id to also mirror the log there
+    parentName: "text_parent",   // <-- your "Parent/Guardian" text column id (optional — leave "" to hide that row)
+    callLogUpdate: null,         // optional: a text/long-text column id to also mirror the call log into
   },
 
   // The Zoom Phone Smart Embed origin. Do not change unless Zoom's docs say otherwise.
   zoomOrigin: "https://applications.zoom.us",
 
-  // The iframe src for Smart Embed. Get this from your Zoom Marketplace
-  // "Zoom Phone Smart Embed" app install/config page after you've added
-  // your hosting domain to the approved domain list.
+  // Fixed Smart Embed URL from Zoom's docs — no per-account lookup needed.
+  // Works once your domain (and monday.com's) is on Zoom's approved domain list.
   zoomEmbedSrc: "https://applications.zoom.us/integration/phone/embeddablephone/home",
 };
 
@@ -34,52 +31,71 @@ if (!monday) {
 
 let currentItemId = null;
 let currentBoardId = null;
-let currentPhone = null;
+let phoneColumnDefs = [];   // [{ id, title }] — every phone-type column on the board
 
 const el = {
   name: document.getElementById("f-name"),
   parent: document.getElementById("f-parent"),
-  phone: document.getElementById("f-phone"),
-  btnCall: document.getElementById("btn-call"),
-  btnSms: document.getElementById("btn-sms"),
+  phoneList: document.getElementById("phone-list"),
+  phoneEmpty: document.getElementById("phone-empty"),
   frame: document.getElementById("zoom-frame"),
   connDot: document.getElementById("conn-dot"),
   connText: document.getElementById("conn-text"),
   banner: document.getElementById("config-banner"),
 };
 
-// Wire the real Zoom embed URL from CONFIG (kept out of the HTML so it's
-// all in one place to edit).
 el.frame.src = CONFIG.zoomEmbedSrc;
 
-
 /* ---------------------------------------------------------------------
-   1. Get the monday item context (which item/board this is embedded on)
+   1. Get monday item context, then discover phone columns, then load data
    --------------------------------------------------------------------- */
 if (monday) {
-  monday.listen("context", (res) => {
+  monday.listen("context", async (res) => {
     const ctx = res.data;
     currentItemId = ctx.itemId;
     currentBoardId = ctx.boardId;
-    if (currentItemId) {
-      loadItemFields(currentItemId);
-    }
-  });
-
-  // Also listen for settings changes if you later add a settings screen
-  // that lets a board admin pick which columns map to phone/parent name.
-  monday.listen("settings", (res) => {
-    if (res.data && res.data.phoneColumnId) {
-      CONFIG.columns.phone = res.data.phoneColumnId;
+    if (currentItemId && currentBoardId) {
+      await discoverPhoneColumns(currentBoardId);
+      await loadItemFields(currentItemId);
     }
   });
 }
 
 /* ---------------------------------------------------------------------
-   2. Pull the item's field values via monday's GraphQL API
+   2. Find every column of type "phone" on this board
+   --------------------------------------------------------------------- */
+async function discoverPhoneColumns(boardId) {
+  const query = `
+    query ($boardId: [ID!]) {
+      boards (ids: $boardId) {
+        columns { id title type }
+      }
+    }
+  `;
+  try {
+    const res = await monday.api(query, { variables: { boardId: [String(boardId)] } });
+    const columns = res.data.boards[0].columns || [];
+    phoneColumnDefs = columns
+      .filter((c) => c.type === "phone")
+      .map((c) => ({ id: c.id, title: c.title }));
+
+    if (phoneColumnDefs.length === 0) {
+      el.phoneEmpty.textContent = "No phone-type columns found on this board.";
+      el.banner.textContent = "No phone columns detected — add a Phone-type column to this board.";
+      el.banner.classList.add("show");
+    }
+  } catch (err) {
+    console.error("Failed to discover phone columns:", err);
+    el.phoneEmpty.textContent = "Could not load phone columns.";
+  }
+}
+
+/* ---------------------------------------------------------------------
+   3. Pull the item's field values (name, parent, every phone column)
    --------------------------------------------------------------------- */
 async function loadItemFields(itemId) {
-  const wantedColumns = [CONFIG.columns.parentName, CONFIG.columns.phone].filter(Boolean);
+  const phoneColumnIds = phoneColumnDefs.map((c) => c.id);
+  const wantedColumns = [CONFIG.columns.parentName, ...phoneColumnIds].filter(Boolean);
 
   const query = `
     query ($itemId: [ID!], $columnIds: [String!]) {
@@ -104,32 +120,64 @@ async function loadItemFields(itemId) {
 
     el.name.textContent = item.name || "—";
 
-    const findCol = (colId) =>
-      item.column_values.find((c) => c.id === colId);
+    const findCol = (colId) => item.column_values.find((c) => c.id === colId);
 
     const parentCol = findCol(CONFIG.columns.parentName);
-    const phoneCol = findCol(CONFIG.columns.phone);
-
     el.parent.textContent = (parentCol && parentCol.text) || "—";
 
-    // monday's phone column stores value as JSON like {"phone":"5552345678","countryShortName":"US"}
-    let phoneDisplay = "—";
-    if (phoneCol && phoneCol.text) {
-      phoneDisplay = phoneCol.text;
-      currentPhone = normalizePhone(phoneCol.text);
-    }
-    el.phone.textContent = phoneDisplay;
-
-    const ready = Boolean(currentPhone);
-    el.btnCall.disabled = !ready;
-    el.btnSms.disabled = !ready;
-
-    if (!CONFIG.columns.phone) el.banner.classList.add("show");
+    renderPhoneRows(item.column_values);
 
   } catch (err) {
     console.error("Failed to load item fields:", err);
-    setConnStatus("err", "Could not read item fields — check column IDs in CONFIG");
+    setConnStatus("err", "Could not read item fields — check CONFIG");
   }
+}
+
+/* ---------------------------------------------------------------------
+   4. Render one Call/Text row per phone column that has a value
+   --------------------------------------------------------------------- */
+function renderPhoneRows(columnValues) {
+  el.phoneList.innerHTML = "";
+
+  const rows = phoneColumnDefs
+    .map((def) => {
+      const col = columnValues.find((c) => c.id === def.id);
+      if (!col || !col.text) return null;
+      return { label: def.title, display: col.text, normalized: normalizePhone(col.text) };
+    })
+    .filter(Boolean);
+
+  if (rows.length === 0) {
+    el.phoneEmpty.textContent = "No phone numbers on this item.";
+    el.phoneList.appendChild(el.phoneEmpty);
+    return;
+  }
+
+  rows.forEach((row) => {
+    const rowEl = document.createElement("div");
+    rowEl.className = "phone-row";
+    rowEl.innerHTML = `
+      <div class="phone-meta">
+        <span class="phone-label">${escapeHtml(row.label)}</span>
+        <span class="phone-number">${escapeHtml(row.display)}</span>
+      </div>
+      <div class="actions">
+        <button class="action btn-call">📞 Call</button>
+        <button class="action secondary btn-sms">💬 Text</button>
+      </div>
+    `;
+
+    rowEl.querySelector(".btn-call").addEventListener("click", () => makeCall(row.normalized));
+    rowEl.querySelector(".btn-sms").addEventListener("click", () => openSms(row.normalized));
+
+    el.phoneList.appendChild(rowEl);
+  });
+}
+
+function escapeHtml(str) {
+  const d = document.createElement("div");
+  d.textContent = str;
+  return d.innerHTML;
 }
 
 function normalizePhone(raw) {
@@ -141,32 +189,24 @@ function normalizePhone(raw) {
 }
 
 /* ---------------------------------------------------------------------
-   3. Click-to-call / click-to-SMS — tell the Zoom iframe what to do
+   5. Click-to-call / click-to-SMS — tell the Zoom iframe what to do
    --------------------------------------------------------------------- */
-el.btnCall.addEventListener("click", () => {
-  if (!currentPhone) return;
+function makeCall(number) {
   el.frame.contentWindow.postMessage(
-    {
-      type: "zp-make-call",
-      data: { number: currentPhone, autoDial: true },
-    },
+    { type: "zp-make-call", data: { number, autoDial: true } },
     CONFIG.zoomOrigin
   );
-});
+}
 
-el.btnSms.addEventListener("click", () => {
-  if (!currentPhone) return;
+function openSms(number) {
   el.frame.contentWindow.postMessage(
-    {
-      type: "zp-input-sms",
-      data: { number: currentPhone, message: "" },
-    },
+    { type: "zp-input-sms", data: { number, message: "" } },
     CONFIG.zoomOrigin
   );
-});
+}
 
 /* ---------------------------------------------------------------------
-   4. Listen for events coming FROM the Zoom iframe
+   6. Listen for events coming FROM the Zoom iframe
    --------------------------------------------------------------------- */
 window.addEventListener("message", (event) => {
   if (event.origin !== CONFIG.zoomOrigin) return; // ignore anything not from Zoom
@@ -201,16 +241,13 @@ function setConnStatus(state, text) {
 }
 
 /* ---------------------------------------------------------------------
-   5. Write the completed call back onto the monday item
+   7. Write the completed call back onto the monday item
    --------------------------------------------------------------------- */
 async function handleCallLogCompleted(data) {
   if (!currentItemId || !currentBoardId) return;
 
-  // data shape from Zoom typically includes: direction, duration, from, to,
-  // result/disposition, timestamp — log the full payload during dev to confirm.
   const summary = `${data.direction || "Call"} — ${data.result || "completed"} — ${formatDuration(data.duration)}`;
 
-  // Always add it as an Update (timeline entry) so there's a permanent log.
   const addUpdateMutation = `
     mutation ($itemId: ID!, $body: String!) {
       create_update (item_id: $itemId, body: $body) { id }
@@ -225,7 +262,6 @@ async function handleCallLogCompleted(data) {
     console.error("Failed to write call log update:", err);
   }
 
-  // Optionally also mirror it into a text/long-text column, if configured.
   if (CONFIG.columns.callLogUpdate) {
     const changeColumnMutation = `
       mutation ($boardId: ID!, $itemId: ID!, $columnId: String!, $value: JSON!) {
@@ -262,7 +298,7 @@ function formatDuration(seconds) {
 /* ---------------------------------------------------------------------
    Dev helper: run getColumnIds() in the browser console (while this app
    is loaded inside a real monday item view) to print every column's id,
-   title and type for the current board, so you can fill in CONFIG above.
+   title and type for the current board.
    --------------------------------------------------------------------- */
 window.getColumnIds = async function () {
   if (!currentBoardId) {
