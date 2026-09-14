@@ -52,6 +52,7 @@ el.frame.src = CONFIG.zoomEmbedSrc;
 if (monday) {
   monday.listen("context", async (res) => {
     const ctx = res.data;
+    console.log("MONDAY CONTEXT:", ctx);
     currentItemId = ctx.itemId;
     currentBoardId = ctx.boardId;
     if (currentItemId && currentBoardId) {
